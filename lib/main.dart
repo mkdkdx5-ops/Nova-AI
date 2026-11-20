@@ -1,6 +1,8 @@
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:flutter_tts/flutter_tts.dart';
 
 void main() {
   runApp(const NovaAI());
@@ -13,7 +15,6 @@ class NovaAI extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'NOVA AI',
       theme: ThemeData.dark(),
       home: const NovaHome(),
     );
@@ -30,7 +31,15 @@ class NovaHome extends StatefulWidget {
 class _NovaHomeState extends State<NovaHome>
     with SingleTickerProviderStateMixin {
   late AnimationController controller;
+
+  final stt.SpeechToText speech = stt.SpeechToText();
+  final FlutterTts tts = FlutterTts();
+  final TextEditingController input = TextEditingController();
+
   bool listening = false;
+  bool speechReady = false;
+  String status = 'NOVA READY';
+  String lastText = 'Hello! I am NOVA AI.';
 
   @override
   void initState() {
@@ -38,253 +47,321 @@ class _NovaHomeState extends State<NovaHome>
 
     controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 18),
+      duration: const Duration(seconds: 16),
     )..repeat();
+
+    setupVoice();
+  }
+
+  Future<void> setupVoice() async {
+    speechReady = await speech.initialize(
+      onStatus: (s) {
+        if (s == 'notListening' || s == 'done') {
+          if (mounted) {
+            setState(() {
+              listening = false;
+              status = 'NOVA READY';
+            });
+          }
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          setState(() {
+            listening = false;
+            status = 'VOICE ERROR';
+          });
+        }
+      },
+    );
+
+    await tts.setLanguage('en-US');
+    await tts.setSpeechRate(0.45);
+    await tts.setPitch(1.0);
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> speak(String text) async {
+    await tts.stop();
+    await tts.speak(text);
+  }
+
+  Future<void> toggleMic() async {
+    if (!speechReady) {
+      await setupVoice();
+    }
+
+    if (!speechReady) {
+      setState(() => status = 'VOICE NOT AVAILABLE');
+      return;
+    }
+
+    if (listening) {
+      await speech.stop();
+      setState(() {
+        listening = false;
+        status = 'NOVA READY';
+      });
+    } else {
+      await tts.stop();
+      setState(() {
+        listening = true;
+        status = 'LISTENING...';
+      });
+
+      await speech.listen(
+        localeId: 'en_US',
+        onResult: (result) {
+          setState(() {
+            lastText = result.recognizedWords;
+          });
+
+          if (result.finalResult && result.recognizedWords.isNotEmpty) {
+            respond(result.recognizedWords);
+          }
+        },
+      );
+    }
+  }
+
+  void respond(String message) {
+    final text = message.toLowerCase().trim();
+    String answer;
+
+    if (text.contains('hello') || text.contains('hi')) {
+      answer = 'Hello! I am NOVA. How can I help you?';
+    } else if (text.contains('your name')) {
+      answer = 'My name is NOVA AI.';
+    } else if (text.contains('time')) {
+      answer = 'I cannot check the exact time yet.';
+    } else if (text.contains('who are you')) {
+      answer = 'I am NOVA, your voice assistant.';
+    } else if (text.contains('thank')) {
+      answer = 'You are welcome!';
+    } else {
+      answer = 'I heard you say $message. '
+          'My smart AI brain is coming in the next update.';
+    }
+
+    setState(() {
+      lastText = answer;
+      status = 'NOVA RESPONDING';
+      listening = false;
+    });
+
+    speak(answer);
+  }
+
+  void sendMessage() {
+    final message = input.text.trim();
+    if (message.isEmpty) return;
+    input.clear();
+    respond(message);
   }
 
   @override
   void dispose() {
     controller.dispose();
+    input.dispose();
+    speech.stop();
+    tts.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF03070C),
+      backgroundColor: const Color(0xFF05090F),
       body: SafeArea(
-        child: AnimatedBuilder(
-          animation: controller,
-          builder: (context, child) {
-            return Column(
-              children: [
-                const SizedBox(height: 25),
-
-                const Text(
-                  'NOVA AI',
-                  style: TextStyle(
-                    fontSize: 30,
-                    letterSpacing: 8,
-                    fontWeight: FontWeight.w300,
-                    color: Color(0xFFD5EFFF),
-                  ),
+        child: Column(
+          children: [
+            const SizedBox(height: 24),
+            const Text(
+              'N O V A',
+              style: TextStyle(
+                color: Color(0xFFBDEBFF),
+                fontSize: 26,
+                letterSpacing: 9,
+                fontWeight: FontWeight.w300,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'ARTIFICIAL INTELLIGENCE',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                letterSpacing: 4,
+              ),
+            ),
+            const Spacer(),
+            AnimatedBuilder(
+              animation: controller,
+              builder: (context, child) {
+                return CustomPaint(
+                  size: const Size(310, 310),
+                  painter: OrbPainter(controller.value),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            Text(
+              status,
+              style: const TextStyle(
+                color: Color(0xFF9DDFFF),
+                letterSpacing: 4,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Text(
+                lastText,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 15,
                 ),
-
-                const SizedBox(height: 8),
-
-                const Text(
-                  'YOUR INTELLIGENT ASSISTANT',
-                  style: TextStyle(
-                    fontSize: 10,
-                    letterSpacing: 4,
-                    color: Colors.white38,
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: toggleMic,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                width: listening ? 86 : 74,
+                height: listening ? 86 : 74,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF0C1923),
+                  border: Border.all(
+                    color: const Color(0xFF9DDFFF),
+                    width: 1,
                   ),
-                ),
-
-                const Spacer(),
-
-                Center(
-                  child: SizedBox(
-                    width: 330,
-                    height: 330,
-                    child: CustomPaint(
-                      painter: ParticleSpherePainter(
-                        progress: controller.value,
-                        listening: listening,
-                      ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8EDCFF)
+                          .withOpacity(listening ? 0.30 : 0.10),
+                      blurRadius: listening ? 30 : 14,
                     ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                Text(
-                  listening ? 'LISTENING...' : 'READY TO CONNECT',
-                  style: TextStyle(
-                    color: listening
-                        ? const Color(0xFF9EEAFF)
-                        : Colors.white54,
-                    letterSpacing: 4,
-                    fontSize: 11,
-                  ),
-                ),
-
-                const Spacer(),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _menuItem(Icons.chat_bubble_outline, 'CHAT'),
-                    _menuItem(Icons.search, 'SEARCH'),
-                    _menuItem(Icons.psychology_outlined, 'BRAIN'),
                   ],
                 ),
-
-                const SizedBox(height: 35),
-
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      listening = !listening;
-                    });
-                  },
-                  child: Container(
-                    width: 82,
-                    height: 82,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0x669DDCFF),
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0x339DDCFF),
-                          blurRadius: 30,
-                          spreadRadius: 3,
+                child: Icon(
+                  listening ? Icons.stop_rounded : Icons.mic_none_rounded,
+                  color: const Color(0xFFBDEBFF),
+                  size: 32,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'TAP TO SPEAK',
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 10,
+                letterSpacing: 3,
+              ),
+            ),
+            const SizedBox(height: 28),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: input,
+                      onSubmitted: (_) => sendMessage(),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Message NOVA...',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xFF101822),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
                         ),
-                      ],
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                      ),
                     ),
-                    child: Icon(
-                      listening ? Icons.stop : Icons.mic_none_rounded,
-                      color: const Color(0xFFB9E6FF),
-                      size: 35,
-                    ),
                   ),
-                ),
-
-                const SizedBox(height: 14),
-
-                const Text(
-                  'TAP TO ACTIVATE',
-                  style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 10,
-                    letterSpacing: 3,
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: sendMessage,
+                    icon: const Icon(Icons.arrow_upward_rounded),
+                    color: const Color(0xFFBDEBFF),
                   ),
-                ),
-
-                const SizedBox(height: 30),
-
-                const Text(
-                  'NOVA AI  •  VERSION 1.0',
-                  style: TextStyle(
-                    color: Colors.white24,
-                    fontSize: 10,
-                    letterSpacing: 2,
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-              ],
-            );
-          },
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
-
-  Widget _menuItem(IconData icon, String text) {
-    return Column(
-      children: [
-        Icon(icon, color: const Color(0xFF9FC9E5), size: 24),
-        const SizedBox(height: 8),
-        Text(
-          text,
-          style: const TextStyle(
-            color: Colors.white38,
-            fontSize: 9,
-            letterSpacing: 2,
-          ),
-        ),
-      ],
-    );
-  }
 }
 
-class ParticleSpherePainter extends CustomPainter {
+class OrbPainter extends CustomPainter {
   final double progress;
-  final bool listening;
 
-  ParticleSpherePainter({
-    required this.progress,
-    required this.listening,
-  });
+  OrbPainter(this.progress);
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width * 0.37;
-    final rotation = progress * math.pi * 2;
+    final radius = size.width * 0.36;
 
-    // Soft atmosphere
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0x229BCFFF),
-          const Color(0x0A77AACC),
-          Colors.transparent,
-        ],
-      ).createShader(
-        Rect.fromCircle(center: center, radius: radius * 1.8),
-      );
+    final glow = Paint()
+      ..color = const Color(0xFF8EDCFF).withOpacity(0.035)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 36);
 
-    canvas.drawCircle(center, radius * 1.8, glowPaint);
+    canvas.drawCircle(center, radius * 1.5, glow);
 
-    // Particles
-    const count = 700;
+    final ring = Paint()
+      ..color = const Color(0xFFB5E8FF).withOpacity(0.10)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+
+    canvas.drawCircle(center, radius * 1.23, ring);
+
+    final dotPaint = Paint()..style = PaintingStyle.fill;
+
+    const int count = 900;
 
     for (int i = 0; i < count; i++) {
       final y = 1 - (2 * (i + 0.5) / count);
-      final ringRadius = math.sqrt(1 - y * y);
-      final angle = i * 2.399963 + rotation;
+      final r = math.sqrt(1 - y * y);
+      final theta = i * 2.399963 + progress * 2 * math.pi;
 
-      final x = math.cos(angle) * ringRadius;
-      final z = math.sin(angle) * ringRadius;
+      final x = math.cos(theta) * r;
+      final z = math.sin(theta) * r;
 
-      // Sphere rotation
-      final rotatedX = x * math.cos(rotation) - z * math.sin(rotation);
-      final rotatedZ = x * math.sin(rotation) + z * math.cos(rotation);
+      final tilt = 0.35;
+      final rotatedY = y * math.cos(tilt) - z * math.sin(tilt);
+      final rotatedZ = y * math.sin(tilt) + z * math.cos(tilt);
 
-      final depth = rotatedZ;
+      final depth = (rotatedZ + 1) / 2;
 
-      final px = center.dx + rotatedX * radius;
-      final py = center.dy + y * radius;
+      final px = center.dx + x * radius;
+      final py = center.dy + rotatedY * radius;
 
-      final hue = (190 + 35 * math.sin(progress * 6.28 + i * 0.03)) % 360;
+      final alpha = (0.12 + depth * 0.38).clamp(0.0, 1.0);
+      final dotSize = 0.5 + depth * 1.15;
 
-      final color = HSVColor.fromAHSV(
-        0.18 + ((depth + 1) / 2) * 0.45,
-        hue / 360,
-        0.35,
-        0.95,
-      ).toColor();
+      dotPaint.color = Color.fromRGBO(170, 220, 245, alpha);
 
-      final dotPaint = Paint()
-        ..color = color
-        ..style = PaintingStyle.fill;
-
-      final dotSize = 0.7 + ((depth + 1) / 2) * 1.7;
-
-      canvas.drawCircle(
-        Offset(px, py),
-        dotSize * (listening ? 1.3 : 1),
-        dotPaint,
-      );
+      canvas.drawCircle(Offset(px, py), dotSize, dotPaint);
     }
-
-    // Outer subtle ring
-    final ringPaint = Paint()
-      ..color = const Color(0x229BCFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-
-    canvas.drawCircle(center, radius * 1.08, ringPaint);
   }
 
   @override
-  bool shouldRepaint(covariant ParticleSpherePainter oldDelegate) {
-    return oldDelegate.progress != progress ||
-        oldDelegate.listening != listening;
+  bool shouldRepaint(covariant OrbPainter oldDelegate) {
+    return oldDelegate.progress != progress;
   }
 }
