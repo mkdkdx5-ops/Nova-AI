@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 
-void main() {
-  runApp(const NovaAI());
-}
+void main() => runApp(const NovaAI());
 
 class NovaAI extends StatelessWidget {
   const NovaAI({super.key});
@@ -38,8 +36,10 @@ class _NovaHomeState extends State<NovaHome>
 
   bool listening = false;
   bool speechReady = false;
+  bool hindi = true;
+
   String status = 'NOVA READY';
-  String lastText = 'Hello! I am NOVA AI.';
+  String lastText = 'नमस्ते! मैं NOVA हूँ।';
 
   @override
   void initState() {
@@ -56,13 +56,11 @@ class _NovaHomeState extends State<NovaHome>
   Future<void> setupVoice() async {
     speechReady = await speech.initialize(
       onStatus: (s) {
-        if (s == 'notListening' || s == 'done') {
-          if (mounted) {
-            setState(() {
-              listening = false;
-              status = 'NOVA READY';
-            });
-          }
+        if ((s == 'notListening' || s == 'done') && mounted) {
+          setState(() {
+            listening = false;
+            status = 'NOVA READY';
+          });
         }
       },
       onError: (e) {
@@ -75,16 +73,31 @@ class _NovaHomeState extends State<NovaHome>
       },
     );
 
-    await tts.setLanguage('en-US');
+    await setLanguage();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> setLanguage() async {
+    await tts.setLanguage(hindi ? 'hi-IN' : 'en-IN');
     await tts.setSpeechRate(0.45);
     await tts.setPitch(1.0);
-
-    if (mounted) setState(() {});
   }
 
   Future<void> speak(String text) async {
     await tts.stop();
     await tts.speak(text);
+  }
+
+  void changeLanguage() async {
+    if (listening) await speech.stop();
+    setState(() {
+      listening = false;
+      hindi = !hindi;
+      status = 'NOVA READY';
+      lastText = hindi ? 'भाषा हिंदी कर दी गई।' : 'Language changed to English.';
+    });
+    await setLanguage();
+    speak(lastText);
   }
 
   Future<void> toggleMic() async {
@@ -107,15 +120,14 @@ class _NovaHomeState extends State<NovaHome>
       await tts.stop();
       setState(() {
         listening = true;
-        status = 'LISTENING...';
+        status = hindi ? 'सुन रही हूँ...' : 'LISTENING...';
       });
 
       await speech.listen(
-        localeId: 'en_US',
+        localeId: hindi ? 'hi_IN' : 'en_IN',
         onResult: (result) {
-          setState(() {
-            lastText = result.recognizedWords;
-          });
+          if (!mounted) return;
+          setState(() => lastText = result.recognizedWords);
 
           if (result.finalResult && result.recognizedWords.isNotEmpty) {
             respond(result.recognizedWords);
@@ -125,23 +137,128 @@ class _NovaHomeState extends State<NovaHome>
     }
   }
 
+  String getTime() {
+    final now = DateTime.now();
+    final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    final minute = now.minute.toString().padLeft(2, '0');
+    final ampm = now.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $ampm";
+  }
+
+  String getDate() {
+    final now = DateTime.now();
+    const days = [
+      'Sunday', 'Monday', 'Tuesday', 'Wednesday',
+      'Thursday', 'Friday', 'Saturday'
+    ];
+    const months = [
+      'January', 'February', 'March', 'April',
+      'May', 'June', 'July', 'August',
+      'September', 'October', 'November', 'December'
+    ];
+    if (hindi) {
+      const hindiDays = [
+        'रविवार', 'सोमवार', 'मंगलवार', 'बुधवार',
+        'गुरुवार', 'शुक्रवार', 'शनिवार'
+      ];
+      const hindiMonths = [
+        'जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
+        'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'
+      ];
+      return '${hindiDays[now.weekday % 7]}, ${now.day} '
+          '${hindiMonths[now.month - 1]} ${now.year}';
+    }
+    return '${days[now.weekday % 7]}, ${now.day} '
+        '${months[now.month - 1]} ${now.year}';
+  }
+
+  String? calculate(String text) {
+    final normalized = text
+        .replaceAll('×', '*')
+        .replaceAll('x', '*')
+        .replaceAll('÷', '/')
+        .replaceAll('plus', '+')
+        .replaceAll(' जोड़ ', '+')
+        .replaceAll(' जोड़ना ', '+')
+        .replaceAll('minus', '-')
+        .replaceAll(' घटा ', '-')
+        .replaceAll('multiply', '*')
+        .replaceAll(' गुणा ', '*')
+        .replaceAll('into', '*')
+        .replaceAll('divided by', '/')
+        .replaceAll(' भाग ', '/')
+        .replaceAll(' by ', '/');
+
+    final match = RegExp(
+      r'(-?\d+(?:\.\d+)?)\s*([+\-*/])\s*(-?\d+(?:\.\d+)?)',
+    ).firstMatch(normalized);
+
+    if (match == null) return null;
+
+    final a = double.parse(match.group(1)!);
+    final op = match.group(2)!;
+    final b = double.parse(match.group(3)!);
+
+    double result;
+    switch (op) {
+      case '+':
+        result = a + b;
+        break;
+      case '-':
+        result = a - b;
+        break;
+      case '*':
+        result = a * b;
+        break;
+      case '/':
+        if (b == 0) return hindi ? 'शून्य से भाग नहीं कर सकते।' : 'Cannot divide by zero.';
+        result = a / b;
+        break;
+      default:
+        return null;
+    }
+
+    final formatted = result == result.roundToDouble()
+        ? result.toInt().toString()
+        : result.toStringAsFixed(2);
+
+    return hindi ? 'उत्तर है $formatted' : 'The answer is $formatted';
+  }
+
   void respond(String message) {
     final text = message.toLowerCase().trim();
     String answer;
 
-    if (text.contains('hello') || text.contains('hi')) {
-      answer = 'Hello! I am NOVA. How can I help you?';
-    } else if (text.contains('your name')) {
-      answer = 'My name is NOVA AI.';
-    } else if (text.contains('time')) {
-      answer = 'I cannot check the exact time yet.';
-    } else if (text.contains('who are you')) {
-      answer = 'I am NOVA, your voice assistant.';
-    } else if (text.contains('thank')) {
-      answer = 'You are welcome!';
+    final mathAnswer = calculate(text);
+    if (mathAnswer != null) {
+      answer = mathAnswer;
+    } else if (text.contains('time') || text.contains('समय') ||
+        text.contains('कितने बजे')) {
+      answer = hindi ? 'अभी समय है ${getTime()}' : 'The time is ${getTime()}';
+    } else if (text.contains('date') || text.contains('तारीख') ||
+        text.contains('दिन') || text.contains('today')) {
+      answer = hindi ? 'आज ${getDate()} है।' : 'Today is ${getDate()}.';
+    } else if (text.contains('hello') || text.contains('hi') ||
+        text.contains('नमस्ते') || text.contains('हेलो')) {
+      answer = hindi ? 'नमस्ते! मैं NOVA हूँ। बताइए, मैं क्या मदद करूँ?'
+          : 'Hello! I am NOVA. How can I help you?';
+    } else if (text.contains('your name') || text.contains('नाम') ||
+        text.contains('who are you')) {
+      answer = hindi ? 'मेरा नाम NOVA AI है।' : 'My name is NOVA AI.';
+    } else if (text.contains('how are you') || text.contains('कैसी हो') ||
+        text.contains('कैसे हो')) {
+      answer = hindi ? 'मैं तैयार हूँ! बताइए, क्या करना है?'
+          : 'I am ready to help! What would you like to do?';
+    } else if (text.contains('thank') || text.contains('धन्यवाद')) {
+      answer = hindi ? 'आपका स्वागत है!' : 'You are welcome!';
+    } else if (text.contains('help') || text.contains('मदद')) {
+      answer = hindi
+          ? 'आप समय, तारीख, आसान गणित या मुझसे बातचीत कर सकते हैं।'
+          : 'Ask me the time, date, simple math, or chat with me.';
     } else {
-      answer = 'I heard you say $message. '
-          'My smart AI brain is coming in the next update.';
+      answer = hindi
+          ? 'मैंने सुना: $message। मैं अभी सीख रही हूँ। समय, तारीख या आसान गणित पूछिए।'
+          : 'I heard: $message. I am still learning. Ask about time, date or simple math.';
     }
 
     setState(() {
@@ -176,7 +293,7 @@ class _NovaHomeState extends State<NovaHome>
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
             const Text(
               'N O V A',
               style: TextStyle(
@@ -186,13 +303,18 @@ class _NovaHomeState extends State<NovaHome>
                 fontWeight: FontWeight.w300,
               ),
             ),
-            const SizedBox(height: 6),
             const Text(
               'ARTIFICIAL INTELLIGENCE',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 10,
-                letterSpacing: 4,
+              style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 4),
+            ),
+            Align(
+              alignment: Alignment.topRight,
+              child: TextButton(
+                onPressed: changeLanguage,
+                child: Text(
+                  hindi ? 'हिंदी  |  EN' : 'EN  |  हिंदी',
+                  style: const TextStyle(color: Color(0xFFBDEBFF)),
+                ),
               ),
             ),
             const Spacer(),
@@ -208,23 +330,16 @@ class _NovaHomeState extends State<NovaHome>
             const SizedBox(height: 20),
             Text(
               status,
-              style: const TextStyle(
-                color: Color(0xFF9DDFFF),
-                letterSpacing: 4,
-                fontSize: 11,
-              ),
+              style: const TextStyle(color: Color(0xFF9DDFFF), letterSpacing: 4, fontSize: 11),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 26),
               child: Text(
                 lastText,
                 textAlign: TextAlign.center,
-                maxLines: 3,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 15,
-                ),
+                maxLines: 4,
+                style: const TextStyle(color: Colors.white70, fontSize: 15),
               ),
             ),
             const Spacer(),
@@ -237,14 +352,10 @@ class _NovaHomeState extends State<NovaHome>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFF0C1923),
-                  border: Border.all(
-                    color: const Color(0xFF9DDFFF),
-                    width: 1,
-                  ),
+                  border: Border.all(color: const Color(0xFF9DDFFF)),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF8EDCFF)
-                          .withOpacity(listening ? 0.30 : 0.10),
+                      color: const Color(0xFF8EDCFF).withOpacity(listening ? 0.30 : 0.10),
                       blurRadius: listening ? 30 : 14,
                     ),
                   ],
@@ -257,15 +368,8 @@ class _NovaHomeState extends State<NovaHome>
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'TAP TO SPEAK',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 10,
-                letterSpacing: 3,
-              ),
-            ),
-            const SizedBox(height: 28),
+            const Text('TAP TO SPEAK', style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 3)),
+            const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
               child: Row(
@@ -276,7 +380,7 @@ class _NovaHomeState extends State<NovaHome>
                       onSubmitted: (_) => sendMessage(),
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: 'Message NOVA...',
+                        hintText: hindi ? 'NOVA से बात करें...' : 'Message NOVA...',
                         hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
                         fillColor: const Color(0xFF101822),
@@ -284,10 +388,7 @@ class _NovaHomeState extends State<NovaHome>
                           borderRadius: BorderRadius.circular(30),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 14,
-                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                       ),
                     ),
                   ),
@@ -309,7 +410,6 @@ class _NovaHomeState extends State<NovaHome>
 
 class OrbPainter extends CustomPainter {
   final double progress;
-
   OrbPainter(this.progress);
 
   @override
@@ -320,19 +420,16 @@ class OrbPainter extends CustomPainter {
     final glow = Paint()
       ..color = const Color(0xFF8EDCFF).withOpacity(0.035)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 36);
-
     canvas.drawCircle(center, radius * 1.5, glow);
 
     final ring = Paint()
       ..color = const Color(0xFFB5E8FF).withOpacity(0.10)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.7;
-
     canvas.drawCircle(center, radius * 1.23, ring);
 
     final dotPaint = Paint()..style = PaintingStyle.fill;
-
-    const int count = 900;
+    const count = 900;
 
     for (int i = 0; i < count; i++) {
       final y = 1 - (2 * (i + 0.5) / count);
@@ -341,11 +438,10 @@ class OrbPainter extends CustomPainter {
 
       final x = math.cos(theta) * r;
       final z = math.sin(theta) * r;
+      const tilt = 0.35;
 
-      final tilt = 0.35;
       final rotatedY = y * math.cos(tilt) - z * math.sin(tilt);
       final rotatedZ = y * math.sin(tilt) + z * math.cos(tilt);
-
       final depth = (rotatedZ + 1) / 2;
 
       final px = center.dx + x * radius;
@@ -355,13 +451,11 @@ class OrbPainter extends CustomPainter {
       final dotSize = 0.5 + depth * 1.15;
 
       dotPaint.color = Color.fromRGBO(170, 220, 245, alpha);
-
       canvas.drawCircle(Offset(px, py), dotSize, dotPaint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant OrbPainter oldDelegate) {
-    return oldDelegate.progress != progress;
-  }
+  bool shouldRepaint(covariant OrbPainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }
