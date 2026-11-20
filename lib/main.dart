@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 
-void main() => runApp(const NovaAI());
+void main() {
+  runApp(const NovaAI());
+}
 
 class NovaAI extends StatelessWidget {
   const NovaAI({super.key});
@@ -44,12 +46,10 @@ class _NovaHomeState extends State<NovaHome>
   @override
   void initState() {
     super.initState();
-
     controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 16),
     )..repeat();
-
     setupVoice();
   }
 
@@ -78,7 +78,7 @@ class _NovaHomeState extends State<NovaHome>
   }
 
   Future<void> setLanguage() async {
-    await tts.setLanguage(hindi ? 'hi-IN' : 'en-IN');
+    await tts.setLanguage(hindi ? 'hi-IN' : 'en-US');
     await tts.setSpeechRate(0.45);
     await tts.setPitch(1.0);
   }
@@ -101,9 +101,7 @@ class _NovaHomeState extends State<NovaHome>
   }
 
   Future<void> toggleMic() async {
-    if (!speechReady) {
-      await setupVoice();
-    }
+    if (!speechReady) await setupVoice();
 
     if (!speechReady) {
       setState(() => status = 'VOICE NOT AVAILABLE');
@@ -116,25 +114,25 @@ class _NovaHomeState extends State<NovaHome>
         listening = false;
         status = 'NOVA READY';
       });
-    } else {
-      await tts.stop();
-      setState(() {
-        listening = true;
-        status = hindi ? 'सुन रही हूँ...' : 'LISTENING...';
-      });
-
-      await speech.listen(
-        localeId: hindi ? 'hi_IN' : 'en_IN',
-        onResult: (result) {
-          if (!mounted) return;
-          setState(() => lastText = result.recognizedWords);
-
-          if (result.finalResult && result.recognizedWords.isNotEmpty) {
-            respond(result.recognizedWords);
-          }
-        },
-      );
+      return;
     }
+
+    await tts.stop();
+    setState(() {
+      listening = true;
+      status = hindi ? 'सुन रही हूँ...' : 'LISTENING...';
+    });
+
+    await speech.listen(
+      localeId: hindi ? 'hi-IN' : 'en-US',
+      onResult: (result) {
+        if (!mounted) return;
+        setState(() => lastText = result.recognizedWords);
+        if (result.finalResult && result.recognizedWords.isNotEmpty) {
+          respond(result.recognizedWords);
+        }
+      },
+    );
   }
 
   String getTime() {
@@ -152,19 +150,19 @@ class _NovaHomeState extends State<NovaHome>
       'Thursday', 'Friday', 'Saturday'
     ];
     const months = [
-      'January', 'February', 'March', 'April',
-      'May', 'June', 'July', 'August',
-      'September', 'October', 'November', 'December'
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
     ];
+    const hindiDays = [
+      'रविवार', 'सोमवार', 'मंगलवार', 'बुधवार',
+      'गुरुवार', 'शुक्रवार', 'शनिवार'
+    ];
+    const hindiMonths = [
+      'जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
+      'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'
+    ];
+
     if (hindi) {
-      const hindiDays = [
-        'रविवार', 'सोमवार', 'मंगलवार', 'बुधवार',
-        'गुरुवार', 'शुक्रवार', 'शनिवार'
-      ];
-      const hindiMonths = [
-        'जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
-        'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'
-      ];
       return '${hindiDays[now.weekday % 7]}, ${now.day} '
           '${hindiMonths[now.month - 1]} ${now.year}';
     }
@@ -178,16 +176,10 @@ class _NovaHomeState extends State<NovaHome>
         .replaceAll('x', '*')
         .replaceAll('÷', '/')
         .replaceAll('plus', '+')
-        .replaceAll(' जोड़ ', '+')
-        .replaceAll(' जोड़ना ', '+')
         .replaceAll('minus', '-')
-        .replaceAll(' घटा ', '-')
         .replaceAll('multiply', '*')
-        .replaceAll(' गुणा ', '*')
         .replaceAll('into', '*')
-        .replaceAll('divided by', '/')
-        .replaceAll(' भाग ', '/')
-        .replaceAll(' by ', '/');
+        .replaceAll('divided by', '/');
 
     final match = RegExp(
       r'(-?\d+(?:\.\d+)?)\s*([+\-*/])\s*(-?\d+(?:\.\d+)?)',
@@ -211,7 +203,9 @@ class _NovaHomeState extends State<NovaHome>
         result = a * b;
         break;
       case '/':
-        if (b == 0) return hindi ? 'शून्य से भाग नहीं कर सकते।' : 'Cannot divide by zero.';
+        if (b == 0) {
+          return hindi ? 'शून्य से भाग नहीं कर सकते।' : 'Cannot divide by zero.';
+        }
         result = a / b;
         break;
       default:
@@ -230,17 +224,19 @@ class _NovaHomeState extends State<NovaHome>
     String answer;
 
     final mathAnswer = calculate(text);
+
     if (mathAnswer != null) {
       answer = mathAnswer;
     } else if (text.contains('time') || text.contains('समय') ||
         text.contains('कितने बजे')) {
       answer = hindi ? 'अभी समय है ${getTime()}' : 'The time is ${getTime()}';
     } else if (text.contains('date') || text.contains('तारीख') ||
-        text.contains('दिन') || text.contains('today')) {
+        text.contains('today') || text.contains('दिन')) {
       answer = hindi ? 'आज ${getDate()} है।' : 'Today is ${getDate()}.';
     } else if (text.contains('hello') || text.contains('hi') ||
         text.contains('नमस्ते') || text.contains('हेलो')) {
-      answer = hindi ? 'नमस्ते! मैं NOVA हूँ। बताइए, मैं क्या मदद करूँ?'
+      answer = hindi
+          ? 'नमस्ते! मैं NOVA हूँ। बताइए, मैं क्या मदद करूँ?'
           : 'Hello! I am NOVA. How can I help you?';
     } else if (text.contains('your name') || text.contains('नाम') ||
         text.contains('who are you')) {
@@ -248,17 +244,17 @@ class _NovaHomeState extends State<NovaHome>
     } else if (text.contains('how are you') || text.contains('कैसी हो') ||
         text.contains('कैसे हो')) {
       answer = hindi ? 'मैं तैयार हूँ! बताइए, क्या करना है?'
-          : 'I am ready to help! What would you like to do?';
+          : 'I am ready to help!';
     } else if (text.contains('thank') || text.contains('धन्यवाद')) {
       answer = hindi ? 'आपका स्वागत है!' : 'You are welcome!';
     } else if (text.contains('help') || text.contains('मदद')) {
       answer = hindi
           ? 'आप समय, तारीख, आसान गणित या मुझसे बातचीत कर सकते हैं।'
-          : 'Ask me the time, date, simple math, or chat with me.';
+          : 'Ask me about time, date, simple math or chat.';
     } else {
       answer = hindi
-          ? 'मैंने सुना: $message। मैं अभी सीख रही हूँ। समय, तारीख या आसान गणित पूछिए।'
-          : 'I heard: $message. I am still learning. Ask about time, date or simple math.';
+          ? 'मैंने सुना: $message। समय, तारीख या गणित पूछिए।'
+          : 'I heard: $message. Ask me about time, date or math.';
     }
 
     setState(() {
@@ -312,7 +308,7 @@ class _NovaHomeState extends State<NovaHome>
               child: TextButton(
                 onPressed: changeLanguage,
                 child: Text(
-                  hindi ? 'हिंदी  |  EN' : 'EN  |  हिंदी',
+                  hindi ? 'हिंदी | EN' : 'EN | हिंदी',
                   style: const TextStyle(color: Color(0xFFBDEBFF)),
                 ),
               ),
@@ -320,12 +316,10 @@ class _NovaHomeState extends State<NovaHome>
             const Spacer(),
             AnimatedBuilder(
               animation: controller,
-              builder: (context, child) {
-                return CustomPaint(
-                  size: const Size(310, 310),
-                  painter: OrbPainter(controller.value),
-                );
-              },
+              builder: (context, child) => CustomPaint(
+                size: const Size(310, 310),
+                painter: OrbPainter(controller.value),
+              ),
             ),
             const SizedBox(height: 20),
             Text(
