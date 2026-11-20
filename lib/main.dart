@@ -21,6 +21,13 @@ class NovaAI extends StatelessWidget {
   }
 }
 
+class ChatItem {
+  final String text;
+  final bool user;
+
+  ChatItem(this.text, this.user);
+}
+
 class NovaHome extends StatefulWidget {
   const NovaHome({super.key});
 
@@ -35,21 +42,29 @@ class _NovaHomeState extends State<NovaHome>
   final stt.SpeechToText speech = stt.SpeechToText();
   final FlutterTts tts = FlutterTts();
   final TextEditingController input = TextEditingController();
+  final ScrollController scrollController = ScrollController();
+
+  final List<ChatItem> messages = [];
 
   bool listening = false;
   bool speechReady = false;
   bool hindi = true;
 
   String status = 'NOVA READY';
-  String lastText = 'नमस्ते! मैं NOVA हूँ।';
 
   @override
   void initState() {
     super.initState();
+
     controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 16),
     )..repeat();
+
+    messages.add(
+      ChatItem('नमस्ते! मैं NOVA हूँ। बताइए, मैं आपकी क्या मदद करूँ?', false),
+    );
+
     setupVoice();
   }
 
@@ -74,6 +89,7 @@ class _NovaHomeState extends State<NovaHome>
     );
 
     await setLanguage();
+
     if (mounted) setState(() {});
   }
 
@@ -90,14 +106,40 @@ class _NovaHomeState extends State<NovaHome>
 
   void changeLanguage() async {
     if (listening) await speech.stop();
+
     setState(() {
       listening = false;
       hindi = !hindi;
       status = 'NOVA READY';
-      lastText = hindi ? 'भाषा हिंदी कर दी गई।' : 'Language changed to English.';
     });
+
     await setLanguage();
-    speak(lastText);
+
+    final message = hindi
+        ? 'भाषा हिंदी कर दी गई है।'
+        : 'Language changed to English.';
+
+    addMessage(message, false);
+    speak(message);
+  }
+
+  void addMessage(String text, bool user) {
+    if (!mounted) return;
+
+    setState(() {
+      messages.add(ChatItem(text, user));
+      status = user ? 'MESSAGE RECEIVED' : 'NOVA RESPONDING';
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scrollController.hasClients) {
+        scrollController.animateTo(
+          scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   Future<void> toggleMic() async {
@@ -118,6 +160,7 @@ class _NovaHomeState extends State<NovaHome>
     }
 
     await tts.stop();
+
     setState(() {
       listening = true;
       status = hindi ? 'सुन रही हूँ...' : 'LISTENING...';
@@ -127,9 +170,11 @@ class _NovaHomeState extends State<NovaHome>
       localeId: hindi ? 'hi-IN' : 'en-US',
       onResult: (result) {
         if (!mounted) return;
-        setState(() => lastText = result.recognizedWords);
-        if (result.finalResult && result.recognizedWords.isNotEmpty) {
-          respond(result.recognizedWords);
+
+        if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+          final spokenText = result.recognizedWords.trim();
+          addMessage(spokenText, true);
+          respond(spokenText);
         }
       },
     );
@@ -145,18 +190,22 @@ class _NovaHomeState extends State<NovaHome>
 
   String getDate() {
     final now = DateTime.now();
+
     const days = [
       'Sunday', 'Monday', 'Tuesday', 'Wednesday',
       'Thursday', 'Friday', 'Saturday'
     ];
+
     const months = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
+
     const hindiDays = [
       'रविवार', 'सोमवार', 'मंगलवार', 'बुधवार',
       'गुरुवार', 'शुक्रवार', 'शनिवार'
     ];
+
     const hindiMonths = [
       'जनवरी', 'फरवरी', 'मार्च', 'अप्रैल', 'मई', 'जून',
       'जुलाई', 'अगस्त', 'सितंबर', 'अक्टूबर', 'नवंबर', 'दिसंबर'
@@ -166,6 +215,7 @@ class _NovaHomeState extends State<NovaHome>
       return '${hindiDays[now.weekday % 7]}, ${now.day} '
           '${hindiMonths[now.month - 1]} ${now.year}';
     }
+
     return '${days[now.weekday % 7]}, ${now.day} '
         '${months[now.month - 1]} ${now.year}';
   }
@@ -192,6 +242,7 @@ class _NovaHomeState extends State<NovaHome>
     final b = double.parse(match.group(3)!);
 
     double result;
+
     switch (op) {
       case '+':
         result = a + b;
@@ -204,7 +255,9 @@ class _NovaHomeState extends State<NovaHome>
         break;
       case '/':
         if (b == 0) {
-          return hindi ? 'शून्य से भाग नहीं कर सकते।' : 'Cannot divide by zero.';
+          return hindi
+              ? 'शून्य से भाग नहीं कर सकते।'
+              : 'Cannot divide by zero.';
         }
         result = a / b;
         break;
@@ -227,23 +280,35 @@ class _NovaHomeState extends State<NovaHome>
 
     if (mathAnswer != null) {
       answer = mathAnswer;
-    } else if (text.contains('time') || text.contains('समय') ||
+    } else if (text.contains('time') ||
+        text.contains('समय') ||
         text.contains('कितने बजे')) {
-      answer = hindi ? 'अभी समय है ${getTime()}' : 'The time is ${getTime()}';
-    } else if (text.contains('date') || text.contains('तारीख') ||
-        text.contains('today') || text.contains('दिन')) {
+      answer = hindi
+          ? 'अभी समय है ${getTime()}'
+          : 'The time is ${getTime()}';
+    } else if (text.contains('date') ||
+        text.contains('तारीख') ||
+        text.contains('today') ||
+        text.contains('दिन')) {
       answer = hindi ? 'आज ${getDate()} है।' : 'Today is ${getDate()}.';
-    } else if (text.contains('hello') || text.contains('hi') ||
-        text.contains('नमस्ते') || text.contains('हेलो')) {
+    } else if (text.contains('hello') ||
+        text == 'hi' ||
+        text.contains('नमस्ते') ||
+        text.contains('हेलो')) {
       answer = hindi
           ? 'नमस्ते! मैं NOVA हूँ। बताइए, मैं क्या मदद करूँ?'
           : 'Hello! I am NOVA. How can I help you?';
-    } else if (text.contains('your name') || text.contains('नाम') ||
+    } else if (text.contains('your name') ||
+        text.contains('नाम') ||
         text.contains('who are you')) {
-      answer = hindi ? 'मेरा नाम NOVA AI है।' : 'My name is NOVA AI.';
-    } else if (text.contains('how are you') || text.contains('कैसी हो') ||
+      answer = hindi
+          ? 'मेरा नाम NOVA AI है।'
+          : 'My name is NOVA AI.';
+    } else if (text.contains('how are you') ||
+        text.contains('कैसी हो') ||
         text.contains('कैसे हो')) {
-      answer = hindi ? 'मैं तैयार हूँ! बताइए, क्या करना है?'
+      answer = hindi
+          ? 'मैं तैयार हूँ! बताइए, क्या करना है?'
           : 'I am ready to help!';
     } else if (text.contains('thank') || text.contains('धन्यवाद')) {
       answer = hindi ? 'आपका स्वागत है!' : 'You are welcome!';
@@ -253,23 +318,21 @@ class _NovaHomeState extends State<NovaHome>
           : 'Ask me about time, date, simple math or chat.';
     } else {
       answer = hindi
-          ? 'मैंने सुना: $message। समय, तारीख या गणित पूछिए।'
-          : 'I heard: $message. Ask me about time, date or math.';
+          ? 'मैंने सुना: $message। अभी मैं बेसिक कमांड समझती हूँ।'
+          : 'I heard: $message. I currently understand basic commands.';
     }
 
-    setState(() {
-      lastText = answer;
-      status = 'NOVA RESPONDING';
-      listening = false;
-    });
-
+    addMessage(answer, false);
+    setState(() => status = 'NOVA RESPONDING');
     speak(answer);
   }
 
   void sendMessage() {
     final message = input.text.trim();
     if (message.isEmpty) return;
+
     input.clear();
+    addMessage(message, true);
     respond(message);
   }
 
@@ -277,6 +340,7 @@ class _NovaHomeState extends State<NovaHome>
   void dispose() {
     controller.dispose();
     input.dispose();
+    scrollController.dispose();
     speech.stop();
     tts.stop();
     super.dispose();
@@ -289,20 +353,27 @@ class _NovaHomeState extends State<NovaHome>
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 22),
+            const SizedBox(height: 12),
+
             const Text(
               'N O V A',
               style: TextStyle(
                 color: Color(0xFFBDEBFF),
-                fontSize: 26,
-                letterSpacing: 9,
+                fontSize: 25,
+                letterSpacing: 8,
                 fontWeight: FontWeight.w300,
               ),
             ),
+
             const Text(
               'ARTIFICIAL INTELLIGENCE',
-              style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 4),
+              style: TextStyle(
+                color: Colors.white38,
+                fontSize: 9,
+                letterSpacing: 4,
+              ),
             ),
+
             Align(
               alignment: Alignment.topRight,
               child: TextButton(
@@ -313,59 +384,111 @@ class _NovaHomeState extends State<NovaHome>
                 ),
               ),
             ),
-            const Spacer(),
-            AnimatedBuilder(
-              animation: controller,
-              builder: (context, child) => CustomPaint(
-                size: const Size(310, 310),
-                painter: OrbPainter(controller.value),
+
+            SizedBox(
+              height: 190,
+              child: AnimatedBuilder(
+                animation: controller,
+                builder: (context, child) => CustomPaint(
+                  size: const Size(230, 190),
+                  painter: OrbPainter(controller.value),
+                ),
               ),
             ),
-            const SizedBox(height: 20),
+
             Text(
               status,
-              style: const TextStyle(color: Color(0xFF9DDFFF), letterSpacing: 4, fontSize: 11),
-            ),
-            const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Text(
-                lastText,
-                textAlign: TextAlign.center,
-                maxLines: 4,
-                style: const TextStyle(color: Colors.white70, fontSize: 15),
+              style: const TextStyle(
+                color: Color(0xFF9DDFFF),
+                letterSpacing: 3,
+                fontSize: 10,
               ),
             ),
-            const Spacer(),
+
+            const SizedBox(height: 8),
+
+            Expanded(
+              child: ListView.builder(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                itemCount: messages.length,
+                itemBuilder: (context, index) {
+                  final item = messages[index];
+
+                  return Align(
+                    alignment: item.user
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.all(13),
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      decoration: BoxDecoration(
+                        color: item.user
+                            ? const Color(0xFF163246)
+                            : const Color(0xFF111A24),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: const Color(0x338EDCFF),
+                        ),
+                      ),
+                      child: Text(
+                        item.text,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
             GestureDetector(
               onTap: toggleMic,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                width: listening ? 86 : 74,
-                height: listening ? 86 : 74,
+                width: listening ? 70 : 60,
+                height: listening ? 70 : 60,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: const Color(0xFF0C1923),
                   border: Border.all(color: const Color(0xFF9DDFFF)),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF8EDCFF).withOpacity(listening ? 0.30 : 0.10),
-                      blurRadius: listening ? 30 : 14,
+                      color: const Color(0xFF8EDCFF)
+                          .withOpacity(listening ? 0.3 : 0.1),
+                      blurRadius: listening ? 28 : 14,
                     ),
                   ],
                 ),
                 child: Icon(
                   listening ? Icons.stop_rounded : Icons.mic_none_rounded,
                   color: const Color(0xFFBDEBFF),
-                  size: 32,
+                  size: 28,
                 ),
               ),
             ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              listening ? 'TAP TO STOP' : 'TAP TO SPEAK',
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 9,
+                letterSpacing: 3,
+              ),
+            ),
+
             const SizedBox(height: 12),
-            const Text('TAP TO SPEAK', style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 3)),
-            const SizedBox(height: 24),
+
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: Row(
                 children: [
                   Expanded(
@@ -374,7 +497,9 @@ class _NovaHomeState extends State<NovaHome>
                       onSubmitted: (_) => sendMessage(),
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: hindi ? 'NOVA से बात करें...' : 'Message NOVA...',
+                        hintText: hindi
+                            ? 'NOVA से बात करें...'
+                            : 'Message NOVA...',
                         hintStyle: const TextStyle(color: Colors.white38),
                         filled: true,
                         fillColor: const Color(0xFF101822),
@@ -382,11 +507,14 @@ class _NovaHomeState extends State<NovaHome>
                           borderRadius: BorderRadius.circular(30),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 13,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   IconButton(
                     onPressed: sendMessage,
                     icon: const Icon(Icons.arrow_upward_rounded),
@@ -404,22 +532,25 @@ class _NovaHomeState extends State<NovaHome>
 
 class OrbPainter extends CustomPainter {
   final double progress;
+
   OrbPainter(this.progress);
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width * 0.36;
+    final radius = size.width * 0.34;
 
     final glow = Paint()
       ..color = const Color(0xFF8EDCFF).withOpacity(0.035)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 36);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30);
+
     canvas.drawCircle(center, radius * 1.5, glow);
 
     final ring = Paint()
       ..color = const Color(0xFFB5E8FF).withOpacity(0.10)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.7;
+
     canvas.drawCircle(center, radius * 1.23, ring);
 
     final dotPaint = Paint()..style = PaintingStyle.fill;
@@ -432,6 +563,7 @@ class OrbPainter extends CustomPainter {
 
       final x = math.cos(theta) * r;
       final z = math.sin(theta) * r;
+
       const tilt = 0.35;
 
       final rotatedY = y * math.cos(tilt) - z * math.sin(tilt);
