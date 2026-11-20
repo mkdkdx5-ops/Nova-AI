@@ -140,7 +140,7 @@ class _NovaHomeState extends State<NovaHome>
     final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
     final minute = now.minute.toString().padLeft(2, '0');
     final ampm = now.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $ampm";
+    return '$hour:$minute $ampm';
   }
 
   String getDate() {
