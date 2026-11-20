@@ -20,8 +20,18 @@ jobs:
         with:
           channel: stable
 
-      - name: Create Flutter project
-        run: flutter create nova_ai
+      - name: Create Android project
+        run: flutter create --project-name nova_ai --platforms android nova_ai
+
+      - name: Copy NOVA AI source
+        run: |
+          cp pubspec.yaml nova_ai/pubspec.yaml
+          cp lib/main.dart nova_ai/lib/main.dart
+
+      - name: Get dependencies
+        run: |
+          cd nova_ai
+          flutter pub get
 
       - name: Build APK
         run: |
