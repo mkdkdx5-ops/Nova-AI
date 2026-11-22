@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 
-void main() => runApp(const NovaAI());
+void main() {
+  runApp(const NovaAI());
+}
 
 class NovaAI extends StatelessWidget {
   const NovaAI({super.key});
@@ -12,8 +14,13 @@ class NovaAI extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'NOVA AI',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(),
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF02050C),
+        useMaterial3: true,
+      ),
       home: const NovaHome(),
     );
   }
@@ -30,10 +37,11 @@ class _NovaHomeState extends State<NovaHome>
     with SingleTickerProviderStateMixin {
   late AnimationController animation;
 
-  final speech = stt.SpeechToText();
-  final tts = FlutterTts();
-  final input = TextEditingController();
-  final scroll = ScrollController();
+  final stt.SpeechToText speech = stt.SpeechToText();
+  final FlutterTts tts = FlutterTts();
+
+  final TextEditingController input = TextEditingController();
+  final ScrollController scroll = ScrollController();
 
   final List<Map<String, dynamic>> chats = [];
 
@@ -42,7 +50,7 @@ class _NovaHomeState extends State<NovaHome>
   bool thinking = false;
   bool available = false;
 
-  String status = 'NOVA ONLINE';
+  String status = 'INITIALIZING NOVA';
 
   @override
   void initState() {
@@ -57,19 +65,67 @@ class _NovaHomeState extends State<NovaHome>
   }
 
   Future<void> initializeAI() async {
-    available = await speech.initialize();
+    try {
+      available = await speech.initialize(
+        onStatus: (value) {
+          if (value == 'notListening' && listening && mounted) {
+            setState(() {
+              listening = false;
+              if (!thinking) status = 'NOVA ONLINE';
+            });
+          }
+        },
+        onError: (error) {
+          if (!mounted) return;
+          setState(() {
+            listening = false;
+            status = 'VOICE ERROR';
+          });
+        },
+      );
 
-    await tts.setLanguage('en-US');
-    await tts.setSpeechRate(0.45);
-    await tts.setPitch(1.0);
+      await tts.setLanguage('en-US');
+      await tts.setSpeechRate(0.45);
+      await tts.setPitch(1.0);
+      await tts.awaitSpeakCompletion(true);
 
-    if (!mounted) return;
-    setState(() => status = 'NOVA ONLINE');
+      tts.setCompletionHandler(() {
+        if (!mounted) return;
+        setState(() {
+          speaking = false;
+          if (!thinking && !listening) status = 'NOVA ONLINE';
+        });
+      });
+
+      tts.setErrorHandler((message) {
+        if (!mounted) return;
+        setState(() {
+          speaking = false;
+          status = 'NOVA ONLINE';
+        });
+      });
+
+      if (!mounted) return;
+
+      setState(() {
+        status = available ? 'NOVA ONLINE' : 'VOICE UNAVAILABLE';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        status = 'INITIALIZATION ERROR";
+      });
+    }
   }
 
   Future<void> listen() async {
+    if (thinking) return;
+
     if (listening) {
       await speech.stop();
+
+      if (!mounted) return;
+
       setState(() {
         listening = false;
         status = 'NOVA ONLINE';
@@ -82,11 +138,17 @@ class _NovaHomeState extends State<NovaHome>
     }
 
     if (!available) {
-      setState(() => status = 'VOICE UNAVAILABLE');
+      if (!mounted) return;
+
+      setState(() {
+        status = 'VOICE UNAVAILABLE';
+      });
       return;
     }
 
     await tts.stop();
+
+    if (!mounted) return;
 
     setState(() {
       listening = true;
@@ -98,98 +160,152 @@ class _NovaHomeState extends State<NovaHome>
       listenFor: const Duration(seconds: 20),
       pauseFor: const Duration(seconds: 3),
       onResult: (result) {
+        if (!mounted) return;
+
         input.text = result.recognizedWords;
 
-        if (result.finalResult && result.recognizedWords.isNotEmpty) {
-          listening = false;
-          send(result.recognizedWords);
+        if (result.finalResult &&
+            result.recognizedWords.trim().isNotEmpty) {
+          final recognized = result.recognizedWords;
+
+          setState(() {
+            listening = false;
+          });
+
+          send(recognized);
         }
       },
     );
   }
 
   String reply(String text) {
-    final q = text.toLowerCase();
+    final q = text.toLowerCase().trim();
 
-    if (q.contains('hello') || q.contains('hi')) {
+    if (q.contains('hello') || q == 'hi' || q == 'hey') {
       return 'Hello! I am Nova. How can I help you?';
     }
+
     if (q.contains('your name')) {
-      return 'My name is Nova AI.';
+      return 'My name is NOVA AI.';
     }
-    if (q.contains('time')) {
-      return 'The time is ${TimeOfDay.now().format(context)}.';
-    }
-    if (q.contains('date')) {
-      final d = DateTime.now();
-      return 'Today is ${d.day}/${d.month}/${d.year}.';
-    }
+
     if (q.contains('who are you')) {
       return 'I am Nova, your mobile AI assistant.';
     }
-    if (q.contains('thank')) {
-      return 'You are welcome.';
-    }
-    if (q.contains('offline')) {
-      return 'I can perform some basic commands offline.';
+
+    if (q.contains('time')) {
+      return 'The current time is ${TimeOfDay.now().format(context)}.';
     }
 
-    return 'I heard you say $text. My smart AI brain is being developed.';
+    if (q.contains('date') || q.contains('today')) {
+      final d = DateTime.now();
+      return 'Today is ${d.day}/${d.month}/${d.year}.';
+    }
+
+    if (q.contains('thank')) {
+      return 'You are welcome!';
+    }
+
+    if (q.contains('offline')) {
+      return 'I can currently perform some basic commands without an AI server.';
+    }
+
+    if (q.contains('help')) {
+      return 'You can ask me my name, the current time, today’s date, or send a simple message.';
+    }
+
+    if (q.contains('how are you')) {
+      return 'My systems are running. I am ready to assist you.';
+    }
+
+    if (q.contains('good morning')) {
+      return 'Good morning! NOVA is ready.';
+    }
+
+    if (q.contains('good night')) {
+      return 'Good night. NOVA is standing by.';
+    }
+
+    return 'I received your message: $text. My advanced AI brain is not connected yet, but my mobile interface is working.';
   }
 
   Future<void> send([String? voice]) async {
     final text = (voice ?? input.text).trim();
-    if (text.isEmpty) return;
+
+    if (text.isEmpty || thinking) return;
 
     await speech.stop();
+
+    if (!mounted) return;
+
     input.clear();
 
     setState(() {
       listening = false;
+      speaking = false;
       thinking = true;
       status = 'THINKING';
-      chats.add({'text": text, "user": true});
+
+      chats.add({
+        'text': text,
+        'user': true,
+      });
     });
 
-    await Future.delayed(const Duration(milliseconds: 650));
+    scrollDown();
+
+    await Future.delayed(const Duration(milliseconds: 450));
+
+    if (!mounted) return;
 
     final answer = reply(text);
 
     setState(() {
       thinking = false;
-      chats.add({"text": answer, "user": false});
+
+      chats.add({
+        'text': answer,
+        'user': false,
+      });
+
       status = 'NOVA ONLINE';
     });
 
     scrollDown();
-    speak(answer);
+
+    await speak(answer);
   }
 
   Future<void> speak(String text) async {
+    if (!mounted) return;
+
     setState(() {
       speaking = true;
       status = 'SPEAKING';
     });
 
-    await tts.stop();
-    await tts.speak(text);
+    try {
+      await tts.stop();
+      await tts.speak(text);
+    } catch (e) {
+      if (!mounted) return;
 
-    if (!mounted) return;
-    setState(() {
-      speaking = false;
-      status = 'NOVA ONLINE';
-    });
+      setState(() {
+        speaking = false;
+        status = 'NOVA ONLINE';
+      });
+    }
   }
 
   void scrollDown() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (scroll.hasClients) {
-        scroll.animateTo(
-          scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
+      if (!scroll.hasClients) return;
+
+      scroll.animateTo(
+        scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -205,7 +321,7 @@ class _NovaHomeState extends State<NovaHome>
 
   @override
   Widget build(BuildContext context) {
-    final mode = listening
+    final int mode = listening
         ? 1
         : thinking
             ? 2
@@ -218,7 +334,7 @@ class _NovaHomeState extends State<NovaHome>
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
 
             const Text(
               'N O V A   A I',
@@ -244,27 +360,33 @@ class _NovaHomeState extends State<NovaHome>
             const SizedBox(height: 10),
 
             SizedBox(
-              height: 330,
+              height: 300,
               width: double.infinity,
               child: AnimatedBuilder(
                 animation: animation,
-                builder: (_, __) => CustomPaint(
-                  painter: HighBlueOrbPainter(
-                    animation.value,
-                    mode,
-                  ),
-                ),
+                builder: (context, child) {
+                  return CustomPaint(
+                    painter: HighBlueOrbPainter(
+                      animation.value,
+                      mode,
+                    ),
+                  );
+                },
               ),
             ),
 
-            Text(
-              status,
-              style: TextStyle(
-                color: listening
-                    ? Colors.lightBlueAccent
-                    : const Color(0xFF79DFFF),
-                letterSpacing: 4,
-                fontSize: 11,
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(
+                status,
+                key: ValueKey(status),
+                style: TextStyle(
+                  color: listening
+                      ? Colors.cyanAccent
+                      : const Color(0xFF79DFFF),
+                  letterSpacing: 4,
+                  fontSize: 11,
+                ),
               ),
             ),
 
@@ -272,7 +394,8 @@ class _NovaHomeState extends State<NovaHome>
 
             GestureDetector(
               onTap: listen,
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
                 width: 76,
                 height: 76,
                 decoration: BoxDecoration(
@@ -334,8 +457,9 @@ class _NovaHomeState extends State<NovaHome>
                     : ListView.builder(
                         controller: scroll,
                         itemCount: chats.length,
-                        itemBuilder: (_, i) {
+                        itemBuilder: (context, i) {
                           final user = chats[i]['user'] as bool;
+
                           return Align(
                             alignment: user
                                 ? Alignment.centerRight
@@ -343,8 +467,9 @@ class _NovaHomeState extends State<NovaHome>
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 10),
                               padding: const EdgeInsets.all(12),
-                              constraints:
-                                  const BoxConstraints(maxWidth: 270),
+                              constraints: const BoxConstraints(
+                                maxWidth: 270,
+                              ),
                               decoration: BoxDecoration(
                                 color: user
                                     ? const Color(0xFF073354)
@@ -373,10 +498,18 @@ class _NovaHomeState extends State<NovaHome>
                     child: TextField(
                       controller: input,
                       onSubmitted: (_) => send(),
+                      style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         hintText: 'Talk to NOVA...',
+                        hintStyle: const TextStyle(
+                          color: Colors.white38,
+                        ),
                         filled: true,
                         fillColor: const Color(0xFF101722),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(30),
                           borderSide: BorderSide.none,
@@ -384,10 +517,12 @@ class _NovaHomeState extends State<NovaHome>
                       ),
                     ),
                   ),
+
                   const SizedBox(width: 8),
+
                   IconButton(
-                    onPressed: send,
-                    icon: const Icon(Icons.arrow_upward),
+                    onPressed: () => send(),
+                    icon: const Icon(Icons.arrow_upward_rounded),
                     color: Colors.cyanAccent,
                   ),
                 ],
@@ -408,35 +543,45 @@ class HighBlueOrbPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final radius = 94.0;
-    final rot = progress * math.pi * 2;
+    final center = Offset(size.width / 2, size.height / 2);
+
+    final radius = math.min(size.width * 0.29, 95.0);
+
+    final rotation = progress * math.pi * 2;
+
     final pulse = 1 + math.sin(progress * math.pi * 8) * 0.035;
 
     final intensity = mode == 1
         ? 1.0
         : mode == 2
-            ? 0.9
+            ? 0.95
             : mode == 3
                 ? 0.85
                 : 0.65;
 
+    // Outer glow
     final glow = Paint()
       ..color = const Color(0xFF008CFF).withOpacity(0.14 * intensity)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
+      ..maskFilter = const MaskFilter.blur(
+        BlurStyle.normal,
+        40,
+      );
 
-    canvas.drawCircle(c, radius * 1.4 * pulse, glow);
+    canvas.drawCircle(center, radius * 1.4 * pulse, glow);
 
-    // Energy rings
+    // Orbit energy rings
     for (int i = 0; i < 5; i++) {
       canvas.save();
-      canvas.translate(c.dx, c.dy);
-      canvas.rotate(rot * (i.isEven ? 1 : -1) * 0.45);
+
+      canvas.translate(center.dx, center.dy);
+
+      canvas.rotate(rotation * (i.isEven ? 1 : -1) * 0.45);
 
       final ringPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = i == 0 ? 1.4 : 0.7
-        ..color = Color(0xFF16BFFF).withOpacity(0.13 * intensity);
+        ..color = const Color(0xFF16BFFF)
+            .withOpacity(0.18 * intensity);
 
       canvas.drawOval(
         Rect.fromCenter(
@@ -450,59 +595,76 @@ class HighBlueOrbPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Orb core glow
-    final coreGlow = Paint()
+    // Core light
+    final corePaint = Paint()
       ..shader = RadialGradient(
         colors: [
           const Color(0xFF62DFFF).withOpacity(0.18 * intensity),
           const Color(0xFF006EFF).withOpacity(0.12 * intensity),
           Colors.transparent,
         ],
-      ).createShader(Rect.fromCircle(center: c, radius: radius));
+      ).createShader(
+        Rect.fromCircle(center: center, radius: radius),
+      );
 
-    canvas.drawCircle(c, radius, coreGlow);
+    canvas.drawCircle(center, radius, corePaint);
 
     // Particle sphere
     const count = 1150;
-    final random = math.Random(42);
 
     for (int i = 0; i < count; i++) {
       final y = 1 - (2 * (i + 0.5) / count);
+
       final r = math.sqrt(1 - y * y);
+
       final theta = i * 2.399963;
 
       final x = math.cos(theta) * r;
       final z = math.sin(theta) * r;
 
-      final rx = x * math.cos(rot) - z * math.sin(rot);
-      final rz = x * math.sin(rot) + z * math.cos(rot);
+      final rotatedX =
+          x * math.cos(rotation) - z * math.sin(rotation);
 
-      final px = c.dx + rx * radius * pulse;
-      final py = c.dy + y * radius * pulse;
+      final rotatedZ =
+          x * math.sin(rotation) + z * math.cos(rotation);
 
-      final depth = (rz + 1) / 2;
-      final dotSize = 0.5 + random.nextDouble() * 1.1;
+      final px = center.dx + rotatedX * radius * pulse;
+      final py = center.dy + y * radius * pulse;
+
+      final depth = (rotatedZ + 1) / 2;
+
+      final dotSize = 0.5 + ((i % 7) / 7) * 1.1;
+
       final alpha = (0.12 + depth * 0.62) * intensity;
 
-      final paint = Paint()
-        ..color = Color.fromRGBO(80, 190, 255, alpha.clamp(0.0, 1.0));
+      final particlePaint = Paint()
+        ..color = Color.fromRGBO(
+          80,
+          190,
+          255,
+          alpha.clamp(0.0, 1.0).toDouble(),
+        );
 
       canvas.drawCircle(
         Offset(px, py),
         dotSize * (0.5 + depth),
-        paint,
+        particlePaint,
       );
     }
 
     // Bright orbit nodes
     for (int i = 0; i < 8; i++) {
-      final a = rot + i * math.pi / 4;
-      final x = c.dx + math.cos(a) * radius * 1.55;
-      final y = c.dy + math.sin(a) * radius * 0.55;
+      final angle = rotation + i * math.pi / 4;
+
+      final x = center.dx + math.cos(angle) * radius * 1.55;
+      final y = center.dy + math.sin(angle) * radius * 0.55;
 
       final nodePaint = Paint()
         ..color = const Color(0xFF39DFFF).withOpacity(0.65)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+        ..maskFilter = const MaskFilter.blur(
+          BlurStyle.normal,
+          5,
+        );
 
       canvas.drawCircle(Offset(x, y), 3, nodePaint);
     }
