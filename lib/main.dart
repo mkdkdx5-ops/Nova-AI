@@ -113,7 +113,7 @@ class _NovaHomeState extends State<NovaHome>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        status = 'INITIALIZATION ERROR";
+        status = 'INITIALIZATION ERROR';
       });
     }
   }
