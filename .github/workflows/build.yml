@@ -7,6 +7,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,7 +26,7 @@ jobs:
       - name: Create Android project
         run: flutter create --project-name nova_ai --platforms android nova_ai
 
-      - name: Add Android voice permissions
+      - name: Add Android permissions
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -31,14 +34,14 @@ jobs:
           p = Path("nova_ai/android/app/src/main/AndroidManifest.xml")
           text = p.read_text()
 
-          permissions = '''
-              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+          permissions = """    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
               <uses-permission android:name="android.permission.INTERNET"/>
-          '''
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+          """
 
           text = text.replace(
-              '<application',
-              permissions + '\\n    <application',
+              "<application",
+              permissions + "\n    <application",
               1
           )
 
@@ -65,4 +68,6 @@ jobs:
         with:
           name: NOVA-AI-2.0
           path: nova_ai/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
           
