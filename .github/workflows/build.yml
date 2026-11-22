@@ -23,47 +23,39 @@ jobs:
       - name: Create Android project
         run: flutter create --project-name nova_ai --platforms android nova_ai
 
-      - name: Copy NOVA source
-        run: |
-          cp pubspec.yaml nova_ai/pubspec.yaml
-          cp lib/main.dart nova_ai/lib/main.dart
-
-      - name: Add Android permissions
+      - name: Add Android voice permissions
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           p = Path("nova_ai/android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
+          text = p.read_text()
 
-          permissions = """
+          permissions = '''
               <uses-permission android:name="android.permission.RECORD_AUDIO"/>
               <uses-permission android:name="android.permission.INTERNET"/>
-          """
+          '''
 
-          queries = """
-              <queries>
-                  <intent>
-                      <action android:name="android.speech.RecognitionService"/>
-                  </intent>
-                  <intent>
-                      <action android:name="android.intent.action.TTS_SERVICE"/>
-                  </intent>
-              </queries>
-          """
+          text = text.replace(
+              '<application',
+              permissions + '\\n    <application',
+              1
+          )
 
-          s = s.replace("<application", permissions + "\n    <application", 1)
-          s = s.replace("<application", queries + "\n    <application", 1)
-
-          p.write_text(s)
+          p.write_text(text)
           PY
 
-      - name: Install packages
+      - name: Copy NOVA AI source
+        run: |
+          cp pubspec.yaml nova_ai/pubspec.yaml
+          cp lib/main.dart nova_ai/lib/main.dart
+
+      - name: Get dependencies
         run: |
           cd nova_ai
           flutter pub get
 
-      - name: Build release APK
+      - name: Build APK
         run: |
           cd nova_ai
           flutter build apk --release
@@ -71,6 +63,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NOVA-AI-2
+          name: NOVA-AI-2.0
           path: nova_ai/build/app/outputs/flutter-apk/app-release.apk
           
